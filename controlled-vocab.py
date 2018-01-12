@@ -3,65 +3,6 @@ import sys
 import threading
 import time
 
-# Miscellaneous
-def show_help():
-    """Log the --help command"""
-    print('Welcome to Controlled Vocabulary Tool. A Python3 CLI tool by Eric Cornelissen.')
-    print('This tool can be used to normalize the vocabulary of raw data and is effictive')
-    print('on large quantities of data.')
-    print('')
-    print('Tips:')
-    print('    - If you don\'t type a value and press ENTER, the output value will be the\n      same as the input value.')
-    print('')
-    print('Arguments:')
-    print('    -c, --case-sensitive     Should the conversion be case sensitive (defaults\n                             is False).')
-    print('    -i, --input              List of input files.')
-    print('    -h, --help               Shows this help message.')
-    print('    -m, --merge              Merge to results into a single file.')
-    print('    -o, --output             List of output files for each input file, followed\n                             by a file to export the mapping (JSON format).')
-
-
-# Configuration
-def parse_args(args):
-    """Parse the configuration arguments"""
-    config = {
-        'case_sensitive': False,
-        'input_files':    [],
-        'mapping_file':   None,
-        'merge':          False,
-        'output_files':   []
-    }
-
-    current_key = None
-    for arg in args:
-        if arg[0:1] == '-':
-            if arg == '--case-sensitive' or arg == '-c':
-                current_key = 'case_sensitive'
-                config['case_sensitive'] = True
-            elif arg == '--help' or arg == '-h':
-                show_help()
-                exit(0)
-            elif arg == '--input' or arg == '-i':
-                current_key = 'input'
-            elif arg == '--merge' or arg == '-m':
-                current_key = 'merge'
-                config['merge'] = True
-            elif arg == '--output' or arg == '-o':
-                current_key = 'output'
-            else:
-                print(f'Unknown argument "{arg}"...')
-                current_key = None
-        else:
-            if current_key == 'input':
-                config['input_files'].append(arg)
-            elif current_key == 'output':
-                if len(config['output_files']) < len(config['input_files']):
-                    config['output_files'].append(arg)
-                else:
-                    config['mapping_file'] = arg
-
-    return config
-
 
 # Thread variables
 global_input = []
@@ -79,6 +20,72 @@ mapping_semaphore = threading.Semaphore(1)
 
 finished_reading = False
 finished_converting = False
+
+
+# Miscellaneous
+def show_help():
+    """Log the --help command"""
+    print('Welcome to Controlled Vocabulary Tool. A Python3 CLI tool by Eric Cornelissen.')
+    print('This tool can be used to normalize the vocabulary of raw data and is effictive')
+    print('on large quantities of data.')
+    print('')
+    print('Tips:')
+    print('    - If you don\'t type a value and press ENTER, the output value will be the\n      same as the input value.')
+    print('')
+    print('Arguments:')
+    print('    -c, --case-sensitive     Should the conversion be case sensitive (defaults\n                             is False).')
+    print('    -f, --fuse               Fuse the results into a single file.')
+    print('    -h, --help               Shows this help message.')
+    print('    -i, --input              List of input files.')
+    print('    -m, --mapping            File with a (initial) mapping to use.')
+    print('    -o, --output             List of output files for each input file, followed\n                             by a file to export the mapping (JSON format).')
+
+
+# Configuration
+def parse_args(args):
+    """Parse the configuration arguments"""
+    global global_mapping, mapping_flag
+    config = {
+        'case_sensitive': False,
+        'input_files':    [],
+        'mapping_input' : None,
+        'mapping_output': None,
+        'merge':          False,
+        'output_files':   []
+    }
+
+    current_key = None
+    for arg in args:
+        if arg[0:1] == '-':
+            if arg == '--case-sensitive' or arg == '-c':
+                current_key = 'case_sensitive'
+                config['case_sensitive'] = True
+            elif arg == '--fuse' or arg == '-f':
+                current_key = 'merge'
+                config['merge'] = True
+            elif arg == '--help' or arg == '-h':
+                show_help()
+                exit(0)
+            elif arg == '--input' or arg == '-i':
+                current_key = 'input'
+            elif arg == '--mapping' or arg == '-m':
+                current_key = 'mapping_input'
+            elif arg == '--output' or arg == '-o':
+                current_key = 'output'
+        else:
+            if current_key == 'input':
+                config['input_files'].append(arg)
+            if current_key == 'mapping_input':
+                mapping_file = open(arg, 'r')
+                global_mapping = json.load(mapping_file)
+                mapping_flag = True
+            elif current_key == 'output':
+                if len(config['output_files']) < len(config['input_files']) or (len(config['output_files']) > 0 and config['merge'] is True):
+                    config['output_files'].append(arg)
+                else:
+                    config['mapping_output'] = arg
+
+    return config
 
 
 # Thread classes
@@ -400,17 +407,20 @@ class WriteThread(threading.Thread):
         print(f'\n{title.upper()}\n-----------------')
 
 
-# Main
-config = parse_args(sys.argv)
+def main():
+    config = parse_args(sys.argv)
 
-reader = ReadThread(config['input_files'], config['output_files'], config['merge'])
-reader.start()
+    reader = ReadThread(config['input_files'], config['output_files'], config['merge'])
+    reader.start()
 
-converter = ConvertThread(config['case_sensitive'])
-converter.start()
+    converter = ConvertThread(config['case_sensitive'])
+    converter.start()
 
-prompter = PromptThread(config['case_sensitive'])
-prompter.start()
+    prompter = PromptThread(config['case_sensitive'])
+    prompter.start()
 
-writer = WriteThread(config['output_files'], config['mapping_file'], config['merge'])
-writer.start()
+    writer = WriteThread(config['output_files'], config['mapping_output'], config['merge'])
+    writer.start()
+
+if __name__ == '__main__':
+    main()
